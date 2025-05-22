@@ -5,12 +5,12 @@ volumes:
 
 services:
   pipenv: &pipenv
-    image: "kennethreitz/pipenv"
+    image: python:3.12-slim
     working_dir: "/app"
     volumes:
       - ".:/app"
       - "dummy:/app/.venv"
-
+    command: ["bash", "-c", "pip install pipenv && pipenv install --dev --deploy --system && pytest -s -vvv"]
   db: &db
     container_name: "sql_test_db"
     image: "mdillon/postgis:11"
@@ -33,6 +33,6 @@ services:
 
   dbtest:
     <<: *pipenv
-    command: ["bash", "-c", "pipenv install --dev --deploy --system && pytest -s -vvv"]
+    command: ["bash", "-c", "pip install pipenv && pipenv install --dev --deploy --system && pytest -s -vvv"]
     depends_on:
       - testdb

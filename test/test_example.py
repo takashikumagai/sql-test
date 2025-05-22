@@ -43,6 +43,46 @@ class TestExample(DbTest):
         )
 
         sql = """
+        WITH RECURSIVE OrganizationSubordinates AS (
+            -- Anchor member: Direct subordinates linked via enterprise_sales_enterprise_customers
+            SELECT
+                esec.sales_organization_id AS ancestor_id,
+                esec.customer_organization_id AS subordinate_id
+            FROM
+                enterprise_sales_enterprise_customers AS esec
+
+            UNION ALL
+
+            -- Recursive member: Indirect subordinates
+            -- Join enterprise_sales_enterprise_customers with the CTE to find
+            -- customers of the current subordinates, thus finding grandchildren and so on.
+            SELECT
+                os.ancestor_id,
+                esec.customer_organization_id
+            FROM
+                enterprise_sales_enterprise_customers AS esec
+            INNER JOIN
+                OrganizationSubordinates AS os
+                ON esec.sales_organization_id = os.subordinate_id
+        )
+        SELECT
+            -- Count only the 'ENTERPRISE_CUSTOMER' type subordinates
+            -- COALESCE handles cases where an organization has no subordinates,
+            -- returning 0 instead of NULL.
+            COALESCE(COUNT(CASE WHEN sub_org.type = 'ENTERPRISE_CUSTOMER' THEN 1 ELSE NULL END), 0) AS subordinates_count,
+            o.id
+        FROM
+            organizations AS o
+        LEFT JOIN
+            OrganizationSubordinates AS os
+            ON o.id = os.ancestor_id
+        LEFT JOIN
+            organizations AS sub_org
+            ON os.subordinate_id = sub_org.id
+        GROUP BY
+            o.id
+        ORDER BY
+            o.id;
         """
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql)
@@ -88,6 +128,14 @@ class TestExample(DbTest):
         )
 
         sql = """
+        SELECT
+            id,
+            ST_X(ST_Centroid(bounds)) AS longitude,
+            ST_Y(ST_Centroid(bounds)) AS latitude
+        FROM
+            japan_segments
+        ORDER BY
+            CAST(REGEXP_REPLACE(id, '^KAGOSHIMA_(\\d+)$', '\\1') AS INTEGER);
         """
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql)
@@ -155,6 +203,46 @@ class TestExample(DbTest):
         )
 
         sql = """
+        WITH query_polygon AS (
+            SELECT ST_SetSRID(ST_GeomFromGeoJSON(
+                '{
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            130.27313232421875,
+                            30.519681272749402
+                        ],
+                        [
+                            131.02020263671875,
+                            30.519681272749402
+                        ],
+                        [
+                            131.02020263671875,
+                            30.80909017893796
+                        ],
+                        [
+                            130.27313232421875,
+                            30.80909017893796
+                        ],
+                        [
+                            130.27313232421875,
+                            30.519681272749402
+                        ]
+                    ]
+                ]
+                }'
+            ), 4326) AS geom
+        )
+        SELECT
+            js.id
+        FROM
+            japan_segments js,
+            query_polygon qp
+        WHERE
+            ST_Contains(qp.geom, js.bounds)
+        ORDER BY
+            js.id;
         """
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql)
